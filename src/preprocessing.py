@@ -1,4 +1,5 @@
 import kagglehub
+from pathlib import Path
 import shutil
 import os
 import glob
@@ -27,13 +28,15 @@ def main():
             interaction_terms[interaction_term_name] = X[col1] * X[col2]
         return pd.concat([X, interaction_terms], axis=1)
     
-    df = pd.read_csv('../data/Time Wasters on Social Media.csv')
+    cwd = Path(os.getcwd())
+    
+    df = pd.read_csv(cwd / 'data/Time-Wasters on Social Media.csv')
 
     df = good_one_hot(df, 100)
 
     y = df['ProductivityLoss']
-    y = pd.DataFrame({"Brain Rot": y})
-    y['Brain Rot'] = y['Brain Rot'].apply(lambda x: 0 if x < 5 else 1)
+    y = pd.DataFrame({"Productivity Lost": y})
+    y['Productivity Lost'] = y['Productivity Lost'].apply(lambda x: 0 if x < 5 else 1)
     # x = df.drop(columns=['ProductivityLoss', 'Satisfaction', 'Addiction Level', 'Self Control'])
     x = df.drop(columns=['ProductivityLoss', 'Satisfaction', 'Addiction Level', 'Self Control'])
     x = add_interaction_terms(x)
