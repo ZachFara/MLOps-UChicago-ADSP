@@ -164,6 +164,10 @@ def main():
     train = pd.read_csv('data/train.csv')
     test = pd.read_csv('data/test.csv')
     
+    assert "User ID" not in train.columns
+    assert "UserID" not in train.columns
+
+    
     x_train = train.drop(columns=['Productivity Lost'])
     y_train = train['Productivity Lost']
     x_test = test.drop(columns=['Productivity Lost'])

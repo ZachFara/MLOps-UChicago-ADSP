@@ -26,7 +26,7 @@ def checkout_dataset_version(version: str) -> None:
 
     version_to_commit = {
         'v1': 'b054eedec2d083210755dc3bb3eff6edafb4109d',
-        'v2': 'fbecb17d0ebfaf8f588d2cbaf399e25c1d4dd5b8',
+        'v2': 'ff918e2306e72c107ec924e48ce193439585875a',
     }
 
     checkout_hash = version_to_commit[version]
@@ -110,7 +110,8 @@ def main(port=5007):
     print(f"F1 Score: {f1:.4f}")
     print(f"ROC AUC: {roc_auc:.4f}")
     
-    current_data = test
+    current_data = test_v2.copy()
+    reference_data = test_v1.copy()
     
     import os
     from evidently.report import Report
@@ -132,8 +133,8 @@ def main(port=5007):
     if 'predictions' in reference_data.columns:
         reference_data.drop('predictions', axis=1, inplace=True)
 
-    current_data["predictions"] = xgb_model.predict(current_data.drop('Productivity Lost', axis=1))
-    reference_data['predictions'] = xgb_model.predict(reference_data.drop('Productivity Lost', axis=1))
+    current_data["predictions"] = predictions_v2
+    reference_data['predictions'] = predictions_v1
 
     # Show the report in the Jupyter Notebook
     report = Report(metrics=[

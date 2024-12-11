@@ -19,27 +19,32 @@ if __name__ == '__main__':
     print("Data preprocessing complete!")
     
     print("Starting AutoML...")
-    try:
-        automl()
-    except Exception as e:
-        print("AutoML failed: It can be buggy sometimes")
-    print("AutoML complete!")
+    # try:
+    #     automl()
+    # except Exception as e:
+    #     print("AutoML failed: It can be buggy sometimes")
+    # print("AutoML complete!")
     
-    print("Starting MLflow training...")
-    mlflow_training()
-    print("MLflow training complete!")
+    # print("Starting MLflow training...")
+    # mlflow_training()
+    # print("MLflow training complete!")
     
     print("Starting model deployment...")
-    model_deployment(port=5002, run_id = None)
+    model_deployment(port=5003, run_id = None)
     print("Model deployment complete!")
     
+    import time
+    time.sleep(5)
+    
     print("Starting model monitoring...")
-    model_monitoring(port=5002)
+    model_monitoring(port=5003)
     print("Model monitoring complete!")
     
     print("Starting model deployment with unique port and run...")
-    model_deployment(port=5005, run_id = '7441a6e21f0d491cbfc0a24336ef04d1')
+    model_deployment(port=5005, run_id = '3c71046cec91494dbc4faf014bbfa2e4')
     print("Unique model deployment complete!")
+    
+    time.sleep(5)
     
     print("Starting model monitoring...")
     model_monitoring(port=5005)

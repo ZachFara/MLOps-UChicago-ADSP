@@ -31,6 +31,15 @@ def main():
     cwd = Path(os.getcwd())
     
     df = pd.read_csv(cwd / 'data/Time-Wasters on Social Media.csv')
+    
+    if 'UserID' in df.columns:
+        df.drop('UserID', axis=1, inplace=True)
+        
+    if 'User ID' in df.columns:
+        df.drop('UserID', axis=1, inplace=True)
+        
+    assert 'UserID' not in df.columns
+    assert 'User ID' not in df.columns
 
     df = good_one_hot(df, 100)
 
