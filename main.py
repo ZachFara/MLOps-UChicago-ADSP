@@ -10,24 +10,20 @@ if __name__ == '__main__':
     download_data()
     print("Data downloaded successfully!")
     
-    print("Starting EDA...")
-    # Add your code here
-    print("EDA complete!")
-    
     print("Starting data preprocessing...")
     preprocessing()
     print("Data preprocessing complete!")
     
     print("Starting AutoML...")
-    # try:
-    #     automl()
-    # except Exception as e:
-    #     print("AutoML failed: It can be buggy sometimes")
-    # print("AutoML complete!")
+    try:
+        automl()
+    except Exception as e:
+        print("AutoML failed: It can be buggy sometimes")
+    print("AutoML complete!")
     
-    # print("Starting MLflow training...")
-    # mlflow_training()
-    # print("MLflow training complete!")
+    print("Starting MLflow training...")
+    mlflow_training(num_iterations=2)
+    print("MLflow training complete!")
     
     print("Starting model deployment...")
     model_deployment(port=5003, run_id = None)
