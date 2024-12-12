@@ -160,7 +160,7 @@ xgb_param_grid = {
 
 
 
-def main():
+def main(num_iterations=5):
     train = pd.read_csv('data/train.csv')
     test = pd.read_csv('data/test.csv')
     
@@ -180,10 +180,10 @@ def main():
     rf_model = RandomForestClassifier(random_state=0)
     mlp_model = MLPClassifier(random_state=0)
     
-        # Example hyperparameter tuning iterations
-    for i in range(5):
+    num_iterations = num_iterations
+    for i in range(num_iterations):
         hyperparams = {k: np.random.choice(v) for k, v in xgb_param_grid.items()}
-        print(f"XGBClassifier Iteration {i+1}/2")
+        print(f"XGBClassifier Iteration {i+1}/{num_iterations}")
         print("Hyperparameters:", hyperparams)
         scaler = run_experiment(train=training_data, test=testing_data, model=xgb_model, hyperparams=hyperparams)
         
@@ -193,12 +193,11 @@ def main():
     'min_samples_split': [2, 5, 10],  # Minimum number of samples required to split an internal node
     'min_samples_leaf': [1, 2, 4],  # Minimum number of samples required to be at a leaf node
     'max_features': [None, 'sqrt', 'log2']  # Number of features to consider when looking for the best split
-}
+    } 
     # Save scaler
     with open("scaler.pkl", "wb") as f:
         pickle.dump(scaler, f)
 
-    num_iterations = 5
     for i in range(num_iterations):
         # Randomly sample hyperparameters
         hyperparams = {k: np.random.choice(v) for k, v in param_grid.items()}
@@ -217,7 +216,6 @@ def main():
 
     import random
 
-    num_iterations = 2
     for i in range(num_iterations):
         hyperparams = {k: random.choice(v) for k, v in param_grid.items()}
         print(f"Iteration {i+1}/{num_iterations}")

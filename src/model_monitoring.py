@@ -144,7 +144,8 @@ def main(port=5007):
 
     report.run(reference_data=reference_data, current_data=current_data, column_mapping=column_mapping)
     os.makedirs(cwd / 'reports', exist_ok=True)
-    report.save_html(str(cwd / 'reports' / 'report_A.html'))
+    print(f"Saving report to disk named report_{port}.html")
+    report.save_html(str(cwd / 'reports' / f'report_{port}.html'))
     report.show()
     
     
