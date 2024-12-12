@@ -16,6 +16,10 @@ def main():
     # Move all files found in the downloaded path to ./data
     for file in glob.glob(os.path.join(path, '**', '*.*'), recursive=True):
         if os.path.isfile(file):
+            dest_path = os.path.join('./data', os.path.basename(file))
+            # If file exists, remove it first
+            if os.path.exists(dest_path):
+                os.remove(dest_path)
             shutil.move(file, './data')
 
     # List the files in ./data to see what CSVs are actually there

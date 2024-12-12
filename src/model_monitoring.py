@@ -1,157 +1,166 @@
-import kagglehub
-from pathlib import Path
-import shutil
-import os
-import glob
 import pandas as pd
 import numpy as np
-import h2o
-from h2o.automl import H2OAutoML
-
+from typing import Dict, Any
+import mlflow
+from mlflow.tracking import MlflowClient
+from evidently import ColumnMapping
+from evidently.report import Report
+from evidently.metrics import DataDriftTable, ClassificationQualityByClass
+from prometheus_client import start_http_server, Gauge, Counter
+import yaml
 import requests
-import pandas as pd
+import json
+from datetime import datetime
+import logging
+from src.utils.logging_utils import setup_logging
 
-import subprocess
+# Initialize metrics
+prediction_drift = Gauge('model_prediction_drift', 'Model prediction drift score')
+data_drift = Gauge('model_data_drift', 'Data drift score')
+model_accuracy = Gauge('model_accuracy', 'Model accuracy score')
+prediction_latency = Gauge('model_prediction_latency', 'Model prediction latency')
+prediction_errors = Counter('model_prediction_errors', 'Number of prediction errors')
 
-def run_command(command):
-    result = subprocess.run(command, capture_output=True, text=True, check=True)
-    print(result.stdout)
-    
+logger = setup_logging(__name__)
 
-def checkout_dataset_version(version: str) -> None:
-    """
-    Checkout a specific version of the dataset using git and DVC, affecting only DVC-tracked data.
-    """
-    assert version in ['v1', 'v2'], "Version must be 'v1' or 'v2'."
+def load_config() -> Dict[str, Any]:
+    """Load configuration from config.yaml"""
+    with open("config/config.yaml", "r") as f:
+        return yaml.safe_load(f)
 
-    version_to_commit = {
-        'v1': 'b054eedec2d083210755dc3bb3eff6edafb4109d',
-        'v2': 'ff918e2306e72c107ec924e48ce193439585875a',
-    }
-
-    checkout_hash = version_to_commit[version]
-
-    # Limit git checkout to DVC-related files only
-    dvc_files = [file for file in os.listdir(".") if file.endswith(".dvc")] + [".dvc"]
-    for file in dvc_files:
-        run_command(["git", "checkout", checkout_hash, "--", file])
-
-    # Checkout dataset version with DVC
-    run_command(["dvc", "checkout", "--force"])
-    
-def load_data_version(version:str) -> pd.DataFrame:
-    checkout_dataset_version(version)
-    train = pd.read_csv('./data/train.csv')
-    test = pd.read_csv('./data/test.csv')
-    return train, test
-
-
-def format_and_invoke(df, scaler, endpoint="http://127.0.0.1:5007/invocations"):
-    continuous_columns = df.select_dtypes(include=['float64', 'int64']).columns
-    df[continuous_columns] = scaler.transform(df[continuous_columns])
-    df = df.apply(pd.to_numeric, errors='coerce')
-    payload = {
-        "dataframe_split": {
-            "columns": df.columns.tolist(),
-            "data": df.values.tolist()
-        }
-    }
-    response = requests.post(endpoint, json=payload)
-    return response
-
-import pickle
-scaler = pickle.load(open('scaler.pkl', 'rb'))
-
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
-
-def classification_metrics(y_true, y_pred):
-    
-    y_pred = (y_pred > .5).astype(int)
-    
-    accuracy = accuracy_score(y_true, y_pred)
-    precision = precision_score(y_true, y_pred)
-    recall = recall_score(y_true, y_pred)
-    f1 = f1_score(y_true, y_pred)
-    roc_auc = roc_auc_score(y_true, y_pred)
-    return accuracy, precision, recall, f1, roc_auc
-
-def main(port=5007):
-    
-    train, test_v1 = load_data_version('v1')
-    x_test = test_v1.drop(columns=['Productivity Lost'])
-    y_test = test_v1['Productivity Lost']
-    
-    response = format_and_invoke(x_test, scaler, f"http://127.0.0.1:{port}/invocations")
-    predictions_v1 = np.array(response.json()['predictions'])
-    
-    accuracy, precision, recall, f1, roc_auc = classification_metrics(y_test,predictions_v1)
-
-    # Print the metrics
-    print("Metrics for v1:")
-    print(f"Accuracy: {accuracy:.4f}")
-    print(f"Precision: {precision:.4f}")
-    print(f"Recall: {recall:.4f}")
-    print(f"F1 Score: {f1:.4f}")
-    print(f"ROC AUC: {roc_auc:.4f}")
-    
-    train, test_v2 = load_data_version('v2')
-    x_test = test_v2.drop(columns=['Productivity Lost'])
-    y_test = test_v2['Productivity Lost']
-    response = format_and_invoke(x_test, scaler, f"http://127.0.0.1:{port}/invocations")
-    predictions_v2 = np.array(response.json()['predictions'])
-    
-    accuracy, precision, recall, f1, roc_auc = classification_metrics(y_test,predictions_v2)
-    
-    # Print the metrics
-    print("Metrics for v2:")
-    print(f"Accuracy: {accuracy:.4f}")
-    print(f"Precision: {precision:.4f}")
-    print(f"Recall: {recall:.4f}")
-    print(f"F1 Score: {f1:.4f}")
-    print(f"ROC AUC: {roc_auc:.4f}")
-    
-    current_data = test_v2.copy()
-    reference_data = test_v1.copy()
-    
-    import os
-    from evidently.report import Report
-    from evidently.metrics import DataDriftTable, ClassificationQualityByClass
-    from evidently import ColumnMapping
-    from pathlib import Path
-
-    cwd = Path(os.getcwd())
-
-    column_mapping = ColumnMapping(
-        target="Productivity Lost",  
-        prediction="predictions"  
-    )
-
-    # These might have gotten set during previous iterations
-    if 'predictions' in current_data.columns:
-        current_data.drop('predictions', axis=1, inplace=True)
+class ModelMonitor:
+    def __init__(self, port: int = 8000):
+        self.config = load_config()
+        self.reference_data = pd.read_csv("./data/train.csv")
+        self.current_data = pd.DataFrame()
+        self.predictions = []
+        self.actuals = []
+        self.port = port
         
-    if 'predictions' in reference_data.columns:
-        reference_data.drop('predictions', axis=1, inplace=True)
+    def start_monitoring_server(self, metrics_port: int = 8080):
+        """Start Prometheus metrics server"""
+        start_http_server(metrics_port)
+        logger.info(f"Metrics server started on port {metrics_port}")
+    
+    def calculate_drift_metrics(self, new_data: pd.DataFrame) -> Dict[str, float]:
+        """Calculate drift metrics between reference and new data"""
+        try:
+            column_mapping = ColumnMapping()
+            
+            report = Report(metrics=[
+                DataDriftTable(),
+                ClassificationQualityByClass()
+            ])
+            
+            report.run(
+                reference_data=self.reference_data,
+                current_data=new_data,
+                column_mapping=column_mapping
+            )
+            
+            # Extract metrics from the report
+            drift_metrics = {}
+            for metric in report.metrics:
+                if hasattr(metric, 'result'):
+                    drift_metrics.update(metric.result)
+            
+            # Update Prometheus metrics
+            data_drift.set(drift_metrics.get('data_drift_score', 0))
+            prediction_drift.set(drift_metrics.get('prediction_drift_score', 0))
+            
+            return drift_metrics
+            
+        except Exception as e:
+            logger.error(f"Error calculating drift metrics: {str(e)}")
+            return {}
+    
+    def calculate_performance_metrics(self) -> Dict[str, float]:
+        """Calculate model performance metrics"""
+        try:
+            from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+            
+            metrics = {
+                'accuracy': accuracy_score(self.actuals, self.predictions),
+                'f1': f1_score(self.actuals, self.predictions),
+                'precision': precision_score(self.actuals, self.predictions),
+                'recall': recall_score(self.actuals, self.predictions)
+            }
+            
+            # Update Prometheus metrics
+            model_accuracy.set(metrics['accuracy'])
+            
+            # Log to MLflow
+            with mlflow.start_run(nested=True):
+                for name, value in metrics.items():
+                    mlflow.log_metric(f"monitoring_{name}", value)
+            
+            return metrics
+            
+        except Exception as e:
+            logger.error(f"Error calculating performance metrics: {str(e)}")
+            return {}
+    
+    def monitor_predictions(self, data: pd.DataFrame, prediction: Any, actual: Any = None):
+        """Monitor individual predictions"""
+        try:
+            # Record prediction latency
+            start_time = datetime.now()
+            response = requests.post(
+                f"http://localhost:{self.port}/predict",
+                json={"features": data.to_dict(orient='records')[0]}
+            )
+            latency = (datetime.now() - start_time).total_seconds()
+            prediction_latency.set(latency)
+            
+            if response.status_code != 200:
+                prediction_errors.inc()
+                logger.error(f"Prediction error: {response.text}")
+                return
+            
+            # Update current data and predictions
+            self.current_data = pd.concat([self.current_data, data])
+            self.predictions.append(prediction)
+            
+            if actual is not None:
+                self.actuals.append(actual)
+            
+            # Calculate drift if enough data is collected
+            if len(self.current_data) >= self.config["monitoring"]["drift_detection"]["window_size"]:
+                drift_metrics = self.calculate_drift_metrics(self.current_data)
+                
+                # Check if drift exceeds threshold
+                if drift_metrics.get('data_drift_score', 0) > self.config["monitoring"]["alerts"]["drift_threshold"]:
+                    logger.warning("Data drift detected! Consider retraining the model.")
+                
+                # Reset current data after drift calculation
+                self.current_data = pd.DataFrame()
+            
+            # Calculate performance metrics if actuals are available
+            if len(self.actuals) > 0:
+                performance_metrics = self.calculate_performance_metrics()
+                
+                # Check if performance drops below threshold
+                if performance_metrics.get('accuracy', 1) < self.config["monitoring"]["alerts"]["performance_threshold"]:
+                    logger.warning("Model performance degradation detected! Consider retraining the model.")
+            
+        except Exception as e:
+            logger.error(f"Error monitoring predictions: {str(e)}")
+            prediction_errors.inc()
 
-    current_data["predictions"] = predictions_v2
-    reference_data['predictions'] = predictions_v1
+def main(port: int = 8000):
+    """Main function to start model monitoring"""
+    try:
+        monitor = ModelMonitor(port=port)
+        monitor.start_monitoring_server()
+        logger.info("Model monitoring started successfully")
+        
+        # Keep the monitoring server running
+        while True:
+            pass
+            
+    except Exception as e:
+        logger.error(f"Error in model monitoring: {str(e)}")
+        raise
 
-    # Show the report in the Jupyter Notebook
-    report = Report(metrics=[
-        DataDriftTable(), 
-        ClassificationQualityByClass()
-    ])
-
-    report.run(reference_data=reference_data, current_data=current_data, column_mapping=column_mapping)
-    os.makedirs(cwd / 'reports', exist_ok=True)
-    report.save_html(str(cwd / 'reports' / 'report_A.html'))
-    report.show()
-    
-    
-    
-    
-    
-    
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

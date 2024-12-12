@@ -1,0 +1,52 @@
+data:
+  source:
+    dataset: "muhammadroshaanriaz/time-wasters-on-social-media"
+    local_path: "./data"
+  validation:
+    expectations_suite: "social_media_suite"
+    min_rows: 1000
+    required_columns:
+      - "ProductivityLoss"
+      - "daily_time"
+      - "frequency"
+      - "main_purpose"
+
+model:
+  type: "xgboost"
+  hyperparameters:
+    n_estimators: 100
+    max_depth: 6
+    learning_rate: 0.1
+  cross_validation:
+    n_splits: 5
+    shuffle: true
+    random_state: 42
+
+mlflow:
+  tracking_uri: "http://localhost:5000"
+  experiment_name: "social_media_predictor"
+  model_name: "social_media_classifier"
+
+api:
+  host: "0.0.0.0"
+  port: 8000
+  model_endpoint: "/predict"
+  health_endpoint: "/health"
+
+monitoring:
+  drift_detection:
+    window_size: 1000
+    threshold: 0.1
+  metrics:
+    - "accuracy"
+    - "f1_score"
+    - "precision"
+    - "recall"
+  alerts:
+    drift_threshold: 0.2
+    performance_threshold: 0.1
+
+streamlit:
+  host: "0.0.0.0"
+  port: 8501
+  title: "Social Media Time-Waster Predictor" 

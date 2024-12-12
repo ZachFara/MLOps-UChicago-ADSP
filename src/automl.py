@@ -9,8 +9,6 @@ import h2o
 from h2o.automl import H2OAutoML
 
 def main():
-
-
     h2o.init(port = 54326, nthreads = -1, max_mem_size = "6g")
     train = h2o.import_file("data/train.csv")
     test = h2o.import_file("data/test.csv")
